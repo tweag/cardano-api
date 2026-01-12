@@ -236,6 +236,7 @@ module Cardano.Api.Internal.IPC
   , QueryInEra (..)
   , QueryInShelleyBasedEra (..)
   , queryNodeLocalState
+  , queryNodeLocalStateLeashed
 
     -- *** Local tx monitoring
   , LocalTxMonitorClient (..)
@@ -761,11 +762,13 @@ mapLocalTxMonitoringClient convTxid convTx ltxmc =
 data AcquiringFailure
   = AFPointTooOld
   | AFPointNotOnChain
+  | AFStateIsBusy
   deriving (Eq, Show)
 
 toAcquiringFailure :: Net.Query.AcquireFailure -> AcquiringFailure
 toAcquiringFailure AcquireFailurePointTooOld = AFPointTooOld
 toAcquiringFailure AcquireFailurePointNotOnChain = AFPointNotOnChain
+toAcquiringFailure AcquireFailurePointStateIsBusy = AFStateIsBusy 
 
 queryNodeLocalState
   :: forall result
@@ -793,7 +796,52 @@ queryNodeLocalState connctInfo mpoint query = do
   singleQuery mPointVar' resultVar' =
     LocalStateQueryClient $ do
       pure $
-        Net.Query.SendMsgAcquire mPointVar' $
+        Net.Query.SendMsgAcquire mPointVar' False $
+          Net.Query.ClientStAcquiring
+            { Net.Query.recvMsgAcquired =
+                pure $
+                  Net.Query.SendMsgQuery query $
+                    Net.Query.ClientStQuerying
+                      { Net.Query.recvMsgResult = \result -> do
+                          atomically $ putTMVar resultVar' (Right result)
+
+                          pure $
+                            Net.Query.SendMsgRelease $
+                              pure $
+                                Net.Query.SendMsgDone ()
+                      }
+            , Net.Query.recvMsgFailure = \failure -> do
+                atomically $ putTMVar resultVar' (Left (toAcquiringFailure failure))
+                pure $ Net.Query.SendMsgDone ()
+            }
+
+queryNodeLocalStateLeashed
+  :: forall result
+   . ()
+  => LocalNodeConnectInfo
+  -> Net.Query.Target ChainPoint
+  -> QueryInMode result
+  -> ExceptT AcquiringFailure IO result
+queryNodeLocalStateLeashed connctInfo mpoint query = do
+  resultVar <- liftIO newEmptyTMVarIO
+  connectToLocalNode
+    connctInfo
+    LocalNodeClientProtocols
+      { localChainSyncClient = NoLocalChainSyncClient
+      , localStateQueryClient = Just (singleQuery mpoint resultVar)
+      , localTxSubmissionClient = Nothing
+      , localTxMonitoringClient = Nothing
+      }
+  ExceptT $ atomically (takeTMVar resultVar)
+ where
+  singleQuery
+    :: Net.Query.Target ChainPoint
+    -> TMVar (Either AcquiringFailure result)
+    -> Net.Query.LocalStateQueryClient BlockInMode ChainPoint QueryInMode IO ()
+  singleQuery mPointVar' resultVar' =
+    LocalStateQueryClient $ do
+      pure $
+        Net.Query.SendMsgAcquire mPointVar' True $
           Net.Query.ClientStAcquiring
             { Net.Query.recvMsgAcquired =
                 pure $

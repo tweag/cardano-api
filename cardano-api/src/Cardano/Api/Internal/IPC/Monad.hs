@@ -5,6 +5,7 @@
 module Cardano.Api.Internal.IPC.Monad
   ( LocalStateQueryExpr
   , executeLocalStateQueryExpr
+  , executeLocalStateQueryExprLeashed
   , queryExpr
   )
 where
@@ -61,7 +62,32 @@ executeLocalStateQueryExpr connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target tmvResultLocalState ntcVersion f
+              Just $ setupLocalStateQueryExpr waitResult target False tmvResultLocalState ntcVersion f
+          , localTxSubmissionClient = Nothing
+          , localTxMonitoringClient = Nothing
+          }
+    )
+
+  atomically waitResult
+
+-- | Execute a local state query expression.
+executeLocalStateQueryExprLeashed
+  :: ()
+  => LocalNodeConnectInfo
+  -> Net.Query.Target ChainPoint
+  -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
+  -> IO (Either AcquiringFailure a)
+executeLocalStateQueryExprLeashed connectInfo target f = do
+  tmvResultLocalState <- newEmptyTMVarIO
+  let waitResult = readTMVar tmvResultLocalState
+
+  connectToLocalNodeWithVersion
+    connectInfo
+    ( \ntcVersion ->
+        LocalNodeClientProtocols
+          { localChainSyncClient = NoLocalChainSyncClient
+          , localStateQueryClient =
+              Just $ setupLocalStateQueryExpr waitResult target True tmvResultLocalState ntcVersion f
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -76,12 +102,13 @@ setupLocalStateQueryExpr
   -- Protocols must wait until 'waitDone' returns because premature exit will
   -- cause other incomplete protocols to abort which may lead to deadlock.
   -> Net.Query.Target ChainPoint
+  -> Bool
   -> TMVar (Either AcquiringFailure a)
   -> NodeToClientVersion
   -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
   -> Net.Query.LocalStateQueryClient BlockInMode ChainPoint QueryInMode IO ()
-setupLocalStateQueryExpr waitDone mPointVar' resultVar' ntcVersion f =
-  LocalStateQueryClient . pure . Net.Query.SendMsgAcquire mPointVar' $
+setupLocalStateQueryExpr waitDone mPointVar' leashed resultVar' ntcVersion f =
+  LocalStateQueryClient . pure . Net.Query.SendMsgAcquire mPointVar' leashed $
     Net.Query.ClientStAcquiring
       { Net.Query.recvMsgAcquired =
           let allQueries = runReaderT (runLocalStateQueryExpr f) ntcVersion
