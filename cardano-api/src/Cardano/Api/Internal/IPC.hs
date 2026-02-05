@@ -297,7 +297,7 @@ import Ouroboros.Network.Protocol.ChainSync.Client as Net.Sync
 import Ouroboros.Network.Protocol.ChainSync.ClientPipelined as Net.SyncP
 import Ouroboros.Network.Protocol.LocalStateQuery.Client (LocalStateQueryClient (..))
 import Ouroboros.Network.Protocol.LocalStateQuery.Client qualified as Net.Query
-import Ouroboros.Network.Protocol.LocalStateQuery.Type (AcquireFailure (..))
+import Ouroboros.Network.Protocol.LocalStateQuery.Type (AcquireFailure (..), LeashID)
 import Ouroboros.Network.Protocol.LocalStateQuery.Type qualified as Net.Query
 import Ouroboros.Network.Protocol.LocalTxMonitor.Client
   ( LocalTxMonitorClient (..)
@@ -768,7 +768,7 @@ data AcquiringFailure
 toAcquiringFailure :: Net.Query.AcquireFailure -> AcquiringFailure
 toAcquiringFailure AcquireFailurePointTooOld = AFPointTooOld
 toAcquiringFailure AcquireFailurePointNotOnChain = AFPointNotOnChain
-toAcquiringFailure AcquireFailurePointStateIsBusy = AFStateIsBusy 
+toAcquiringFailure AcquireFailurePointStateIsBusy = AFStateIsBusy
 
 queryNodeLocalState
   :: forall result
@@ -796,7 +796,7 @@ queryNodeLocalState connctInfo mpoint query = do
   singleQuery mPointVar' resultVar' =
     LocalStateQueryClient $ do
       pure $
-        Net.Query.SendMsgAcquire mPointVar' False $
+        Net.Query.SendMsgAcquire mPointVar' Nothing $
           Net.Query.ClientStAcquiring
             { Net.Query.recvMsgAcquired =
                 pure $
@@ -819,10 +819,11 @@ queryNodeLocalStateLeashed
   :: forall result
    . ()
   => LocalNodeConnectInfo
+  -> LeashID
   -> Net.Query.Target ChainPoint
   -> QueryInMode result
   -> ExceptT AcquiringFailure IO result
-queryNodeLocalStateLeashed connctInfo mpoint query = do
+queryNodeLocalStateLeashed connctInfo leashId mpoint query = do
   resultVar <- liftIO newEmptyTMVarIO
   connectToLocalNode
     connctInfo
@@ -841,7 +842,7 @@ queryNodeLocalStateLeashed connctInfo mpoint query = do
   singleQuery mPointVar' resultVar' =
     LocalStateQueryClient $ do
       pure $
-        Net.Query.SendMsgAcquire mPointVar' True $
+        Net.Query.SendMsgAcquire mPointVar' (Just leashId) $
           Net.Query.ClientStAcquiring
             { Net.Query.recvMsgAcquired =
                 pure $

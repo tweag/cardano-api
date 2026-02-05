@@ -62,7 +62,7 @@ executeLocalStateQueryExpr connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target False tmvResultLocalState ntcVersion f
+              Just $ setupLocalStateQueryExpr waitResult target Nothing tmvResultLocalState ntcVersion f
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -74,10 +74,11 @@ executeLocalStateQueryExpr connectInfo target f = do
 executeLocalStateQueryExprLeashed
   :: ()
   => LocalNodeConnectInfo
+  -> Net.Query.LeashID
   -> Net.Query.Target ChainPoint
   -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
   -> IO (Either AcquiringFailure a)
-executeLocalStateQueryExprLeashed connectInfo target f = do
+executeLocalStateQueryExprLeashed connectInfo leashId target f = do
   tmvResultLocalState <- newEmptyTMVarIO
   let waitResult = readTMVar tmvResultLocalState
 
@@ -87,7 +88,7 @@ executeLocalStateQueryExprLeashed connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target True tmvResultLocalState ntcVersion f
+              Just $ setupLocalStateQueryExpr waitResult target (Just leashId) tmvResultLocalState ntcVersion f
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -102,7 +103,7 @@ setupLocalStateQueryExpr
   -- Protocols must wait until 'waitDone' returns because premature exit will
   -- cause other incomplete protocols to abort which may lead to deadlock.
   -> Net.Query.Target ChainPoint
-  -> Bool
+  -> Maybe Net.Query.LeashID
   -> TMVar (Either AcquiringFailure a)
   -> NodeToClientVersion
   -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
