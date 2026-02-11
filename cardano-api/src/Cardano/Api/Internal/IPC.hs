@@ -321,6 +321,7 @@ import Control.Concurrent.STM
   )
 import Control.Exception (throwIO)
 import Control.Monad (void)
+import Control.Monad.Extra (guard)
 import Control.Monad.IO.Class
 import Control.Tracer (nullTracer)
 import Data.Aeson (ToJSON, object, toJSON, (.=))
@@ -806,7 +807,7 @@ queryNodeLocalState connctInfo mpoint query = do
                           atomically $ putTMVar resultVar' (Right result)
 
                           pure $
-                            Net.Query.SendMsgRelease $
+                            Net.Query.SendMsgRelease Nothing $
                               pure $
                                 Net.Query.SendMsgDone ()
                       }
@@ -820,10 +821,12 @@ queryNodeLocalStateLeashed
    . ()
   => LocalNodeConnectInfo
   -> LeashID
+  -> Bool
+  -- ^ Whether to release leash after query
   -> Net.Query.Target ChainPoint
   -> QueryInMode result
   -> ExceptT AcquiringFailure IO result
-queryNodeLocalStateLeashed connctInfo leashId mpoint query = do
+queryNodeLocalStateLeashed connctInfo leashId shouldRelease mpoint query = do
   resultVar <- liftIO newEmptyTMVarIO
   connectToLocalNode
     connctInfo
@@ -852,7 +855,7 @@ queryNodeLocalStateLeashed connctInfo leashId mpoint query = do
                           atomically $ putTMVar resultVar' (Right result)
 
                           pure $
-                            Net.Query.SendMsgRelease $
+                            Net.Query.SendMsgRelease (guard shouldRelease *> Just leashId) $
                               pure $
                                 Net.Query.SendMsgDone ()
                       }

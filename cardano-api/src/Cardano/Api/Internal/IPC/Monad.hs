@@ -62,7 +62,7 @@ executeLocalStateQueryExpr connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target Nothing tmvResultLocalState ntcVersion f
+              Just $ setupLocalStateQueryExpr waitResult target Nothing False tmvResultLocalState ntcVersion f
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -75,10 +75,11 @@ executeLocalStateQueryExprLeashed
   :: ()
   => LocalNodeConnectInfo
   -> Net.Query.LeashID
+  -> Bool
   -> Net.Query.Target ChainPoint
   -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
   -> IO (Either AcquiringFailure a)
-executeLocalStateQueryExprLeashed connectInfo leashId target f = do
+executeLocalStateQueryExprLeashed connectInfo leashId shouldRelease target f = do
   tmvResultLocalState <- newEmptyTMVarIO
   let waitResult = readTMVar tmvResultLocalState
 
@@ -88,7 +89,15 @@ executeLocalStateQueryExprLeashed connectInfo leashId target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target (Just leashId) tmvResultLocalState ntcVersion f
+              Just $
+                setupLocalStateQueryExpr
+                  waitResult
+                  target
+                  (Just leashId)
+                  shouldRelease
+                  tmvResultLocalState
+                  ntcVersion
+                  f
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -104,12 +113,14 @@ setupLocalStateQueryExpr
   -- cause other incomplete protocols to abort which may lead to deadlock.
   -> Net.Query.Target ChainPoint
   -> Maybe Net.Query.LeashID
+  -> Bool
+  -- ^ Whether to release the leash with MsgDone. Does nothing if leash id is Nothing
   -> TMVar (Either AcquiringFailure a)
   -> NodeToClientVersion
   -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
   -> Net.Query.LocalStateQueryClient BlockInMode ChainPoint QueryInMode IO ()
-setupLocalStateQueryExpr waitDone mPointVar' leashed resultVar' ntcVersion f =
-  LocalStateQueryClient . pure . Net.Query.SendMsgAcquire mPointVar' leashed $
+setupLocalStateQueryExpr waitDone mPointVar' mLeashId shouldRelease resultVar' ntcVersion f =
+  LocalStateQueryClient . pure . Net.Query.SendMsgAcquire mPointVar' mLeashId $
     Net.Query.ClientStAcquiring
       { Net.Query.recvMsgAcquired =
           let allQueries = runReaderT (runLocalStateQueryExpr f) ntcVersion
@@ -124,7 +135,7 @@ setupLocalStateQueryExpr waitDone mPointVar' leashed resultVar' ntcVersion f =
   finalContinuation result = do
     atomically $ putTMVar resultVar' (Right result)
     void $ atomically waitDone -- Wait for all protocols to complete before exiting.
-    pure $ Net.Query.SendMsgRelease $ pure $ Net.Query.SendMsgDone ()
+    pure $ Net.Query.SendMsgRelease (guard shouldRelease *> mLeashId) $ pure $ Net.Query.SendMsgDone ()
 
 -- | Get the node server's Node-to-Client version.
 getNtcVersion :: LocalStateQueryExpr block point QueryInMode r IO NodeToClientVersion
