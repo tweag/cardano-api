@@ -44,6 +44,7 @@ module Cardano.Api.Network.IPC.Internal
   , QueryInEra (..)
   , QueryInShelleyBasedEra (..)
   , queryNodeLocalState
+  , queryNodeLocalStateLeashed
 
     -- *** Local tx monitoring
   , LocalTxMonitorClient (..)
@@ -101,7 +102,7 @@ import Ouroboros.Network.Protocol.ChainSync.Client as Net.Sync
 import Ouroboros.Network.Protocol.ChainSync.ClientPipelined as Net.SyncP
 import Ouroboros.Network.Protocol.LocalStateQuery.Client (LocalStateQueryClient (..))
 import Ouroboros.Network.Protocol.LocalStateQuery.Client qualified as Net.Query
-import Ouroboros.Network.Protocol.LocalStateQuery.Type (AcquireFailure (..))
+import Ouroboros.Network.Protocol.LocalStateQuery.Type (AcquireFailure (..), LeashID)
 import Ouroboros.Network.Protocol.LocalStateQuery.Type qualified as Net.Query
 import Ouroboros.Network.Protocol.LocalTxMonitor.Client
   ( LocalTxMonitorClient (..)
@@ -125,6 +126,7 @@ import Control.Concurrent.STM
   )
 import Control.Exception (throwIO)
 import Control.Monad (void)
+import Control.Monad.Extra (guard)
 import Control.Monad.IO.Class
 import Control.Tracer (nullTracer)
 import Data.Aeson (ToJSON, object, toJSON, (.=))
@@ -567,6 +569,7 @@ mapLocalTxMonitoringClient convTxid convTx ltxmc =
 data AcquiringFailure
   = AFPointTooOld
   | AFPointNotOnChain
+  | AFStateIsBusy
   deriving (Eq, Show)
 
 instance Error AcquiringFailure where
@@ -575,6 +578,7 @@ instance Error AcquiringFailure where
 toAcquiringFailure :: Net.Query.AcquireFailure -> AcquiringFailure
 toAcquiringFailure AcquireFailurePointTooOld = AFPointTooOld
 toAcquiringFailure AcquireFailurePointNotOnChain = AFPointNotOnChain
+toAcquiringFailure AcquireFailurePointStateIsBusy = AFStateIsBusy
 
 queryNodeLocalState
   :: forall result
@@ -602,7 +606,7 @@ queryNodeLocalState connctInfo mpoint query = do
   singleQuery mPointVar' resultVar' =
     LocalStateQueryClient $ do
       pure $
-        Net.Query.SendMsgAcquire mPointVar' $
+        Net.Query.SendMsgAcquire mPointVar' Nothing $
           Net.Query.ClientStAcquiring
             { Net.Query.recvMsgAcquired =
                 pure $
@@ -612,7 +616,54 @@ queryNodeLocalState connctInfo mpoint query = do
                           atomically $ putTMVar resultVar' (Right result)
 
                           pure $
-                            Net.Query.SendMsgRelease $
+                            Net.Query.SendMsgRelease Nothing $
+                              pure $
+                                Net.Query.SendMsgDone ()
+                      }
+            , Net.Query.recvMsgFailure = \failure -> do
+                atomically $ putTMVar resultVar' (Left (toAcquiringFailure failure))
+                pure $ Net.Query.SendMsgDone ()
+            }
+
+queryNodeLocalStateLeashed
+  :: forall result
+   . ()
+  => LocalNodeConnectInfo
+  -> LeashID
+  -> Bool
+  -> Net.Query.Target ChainPoint
+  -> QueryInMode result
+  -> ExceptT AcquiringFailure IO result
+queryNodeLocalStateLeashed connctInfo leashId shouldRelease mpoint query = do
+  resultVar <- liftIO newEmptyTMVarIO
+  connectToLocalNode
+    connctInfo
+    LocalNodeClientProtocols
+      { localChainSyncClient = NoLocalChainSyncClient
+      , localStateQueryClient = Just (singleQuery mpoint resultVar)
+      , localTxSubmissionClient = Nothing
+      , localTxMonitoringClient = Nothing
+      }
+  ExceptT $ atomically (takeTMVar resultVar)
+ where
+  singleQuery
+    :: Net.Query.Target ChainPoint
+    -> TMVar (Either AcquiringFailure result)
+    -> Net.Query.LocalStateQueryClient BlockInMode ChainPoint QueryInMode IO ()
+  singleQuery mPointVar' resultVar' =
+    LocalStateQueryClient $ do
+      pure $
+        Net.Query.SendMsgAcquire mPointVar' (Just leashId) $
+          Net.Query.ClientStAcquiring
+            { Net.Query.recvMsgAcquired =
+                pure $
+                  Net.Query.SendMsgQuery query $
+                    Net.Query.ClientStQuerying
+                      { Net.Query.recvMsgResult = \result -> do
+                          atomically $ putTMVar resultVar' (Right result)
+
+                          pure $
+                            Net.Query.SendMsgRelease (guard shouldRelease *> Just leashId) $
                               pure $
                                 Net.Query.SendMsgDone ()
                       }
