@@ -5,6 +5,7 @@
 module Cardano.Api.Network.IPC.Internal.Monad
   ( LocalStateQueryExpr
   , executeLocalStateQueryExpr
+  , executeLocalStateQueryExprLeashed
   , executeLocalStateQueryExprWithVersion
   , queryExpr
   )
@@ -59,7 +60,7 @@ executeLocalStateQueryExprWithVersion connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target tmvResultLocalState ntcVersion (f ntcVersion)
+              Just $ setupLocalStateQueryExpr waitResult target Nothing False tmvResultLocalState ntcVersion (f ntcVersion)
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -84,7 +85,34 @@ executeLocalStateQueryExpr connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target tmvResultLocalState ntcVersion f
+              Just $ setupLocalStateQueryExpr waitResult target Nothing False tmvResultLocalState ntcVersion f
+          , localTxSubmissionClient = Nothing
+          , localTxMonitoringClient = Nothing
+          }
+    )
+
+  atomically waitResult
+
+-- | Execute a local state query expression.
+executeLocalStateQueryExprLeashed
+  :: ()
+  => LocalNodeConnectInfo
+  -> Net.Query.LeashId
+  -> Bool
+  -> Net.Query.Target ChainPoint
+  -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
+  -> IO (Either AcquiringFailure a)
+executeLocalStateQueryExprLeashed connectInfo leashId shouldRelease target f = do
+  tmvResultLocalState <- newEmptyTMVarIO
+  let waitResult = readTMVar tmvResultLocalState
+
+  connectToLocalNodeWithVersion
+    connectInfo
+    ( \ntcVersion ->
+        LocalNodeClientProtocols
+          { localChainSyncClient = NoLocalChainSyncClient
+          , localStateQueryClient =
+              Just $ setupLocalStateQueryExpr waitResult target (Just leashId) shouldRelease tmvResultLocalState ntcVersion f
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -99,12 +127,15 @@ setupLocalStateQueryExpr
   -- Protocols must wait until 'waitDone' returns because premature exit will
   -- cause other incomplete protocols to abort which may lead to deadlock.
   -> Net.Query.Target ChainPoint
+  -> Maybe Net.Query.LeashId
+  -> Bool
+  -- ^ Whether to release the leash with MsgDone. Does nothing if leash id is Nothing
   -> TMVar (Either AcquiringFailure a)
   -> NodeToClientVersion
   -> LocalStateQueryExpr BlockInMode ChainPoint QueryInMode () IO a
   -> Net.Query.LocalStateQueryClient BlockInMode ChainPoint QueryInMode IO ()
-setupLocalStateQueryExpr waitDone mPointVar' resultVar' ntcVersion f =
-  LocalStateQueryClient . pure . Net.Query.SendMsgAcquire mPointVar' $
+setupLocalStateQueryExpr waitDone mPointVar' mLeashId shouldRelease resultVar' ntcVersion f =
+  LocalStateQueryClient . pure . Net.Query.SendMsgAcquire mPointVar' mLeashId $
     Net.Query.ClientStAcquiring
       { Net.Query.recvMsgAcquired =
           let allQueries = runReaderT (runLocalStateQueryExpr f) ntcVersion
@@ -112,14 +143,14 @@ setupLocalStateQueryExpr waitDone mPointVar' resultVar' ntcVersion f =
       , Net.Query.recvMsgFailure = \failure -> do
           atomically $ putTMVar resultVar' (Left (toAcquiringFailure failure))
           void $ atomically waitDone -- Wait for all protocols to complete before exiting.
-          pure $ Net.Query.SendMsgDone ()
+          pure $ Net.Query.SendMsgDone mLeashId ()
       }
  where
   -- We wait for all queries to finish before exiting.
   finalContinuation result = do
     atomically $ putTMVar resultVar' (Right result)
     void $ atomically waitDone -- Wait for all protocols to complete before exiting.
-    pure $ Net.Query.SendMsgRelease $ pure $ Net.Query.SendMsgDone ()
+    pure $ Net.Query.SendMsgRelease shouldRelease $ pure $ Net.Query.SendMsgDone (guard shouldRelease *> mLeashId) ()
 
 -- | Get the node server's Node-to-Client version.
 getNtcVersion :: LocalStateQueryExpr block point QueryInMode r IO NodeToClientVersion
