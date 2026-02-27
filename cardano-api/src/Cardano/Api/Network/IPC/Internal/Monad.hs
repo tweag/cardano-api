@@ -8,6 +8,7 @@ module Cardano.Api.Network.IPC.Internal.Monad
   , executeLocalStateQueryExprLeashed
   , executeLocalStateQueryExprWithVersion
   , queryExpr
+  , reacquireLeash
   )
 where
 
@@ -60,7 +61,15 @@ executeLocalStateQueryExprWithVersion connectInfo target f = do
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target Nothing False tmvResultLocalState ntcVersion (f ntcVersion)
+              Just $
+                setupLocalStateQueryExpr
+                  waitResult
+                  target
+                  Nothing
+                  False
+                  tmvResultLocalState
+                  ntcVersion
+                  (f ntcVersion)
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }
@@ -112,7 +121,48 @@ executeLocalStateQueryExprLeashed connectInfo leashId shouldRelease target f = d
         LocalNodeClientProtocols
           { localChainSyncClient = NoLocalChainSyncClient
           , localStateQueryClient =
-              Just $ setupLocalStateQueryExpr waitResult target (Just leashId) shouldRelease tmvResultLocalState ntcVersion f
+              Just $
+                setupLocalStateQueryExpr
+                  waitResult
+                  target
+                  (Just leashId)
+                  shouldRelease
+                  tmvResultLocalState
+                  ntcVersion
+                  f
+          , localTxSubmissionClient = Nothing
+          , localTxMonitoringClient = Nothing
+          }
+    )
+
+  atomically waitResult
+
+-- | Update the leashing point for the given 'LeashID'
+reacquireLeash
+  :: ()
+  => LocalNodeConnectInfo
+  -> Net.Query.LeashID
+  -> Net.Query.Target ChainPoint
+  -> IO (Either AcquiringFailure ())
+reacquireLeash connectInfo leashId target = do
+  tmvResultLocalState <- newEmptyTMVarIO
+  let waitResult = readTMVar tmvResultLocalState
+  connectToLocalNodeWithVersion
+    connectInfo
+    ( const
+        LocalNodeClientProtocols
+          { localChainSyncClient = NoLocalChainSyncClient
+          , localStateQueryClient =
+              Just $
+                LocalStateQueryClient . pure . Net.Query.SendMsgAcquire target (Just leashId) $
+                  Net.Query.ClientStAcquiring
+                    { Net.Query.recvMsgAcquired = do
+                        atomically $ putTMVar tmvResultLocalState (Right ())
+                        pure $ Net.Query.SendMsgRelease Nothing $ pure $ Net.Query.SendMsgDone ()
+                    , Net.Query.recvMsgFailure = \failure -> do
+                        atomically $ putTMVar tmvResultLocalState (Left (toAcquiringFailure failure))
+                        pure $ Net.Query.SendMsgDone ()
+                    }
           , localTxSubmissionClient = Nothing
           , localTxMonitoringClient = Nothing
           }

@@ -215,6 +215,7 @@ module Cardano.Api.Network.IPC
   , QueryInEra (..)
   , QueryInShelleyBasedEra (..)
   , queryNodeLocalState
+  , reacquireLeash
 
     -- **** Query monad
   , LocalStateQueryExpr
