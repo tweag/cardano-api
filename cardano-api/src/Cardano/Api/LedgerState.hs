@@ -174,7 +174,7 @@ import Cardano.Ledger.Keys qualified as L
 import Cardano.Ledger.Keys qualified as SL
 import Cardano.Ledger.Shelley.API qualified as ShelleyAPI
 import Cardano.Ledger.Shelley.Core qualified as Core
-import Cardano.Ledger.Shelley.Genesis qualified as Ledger
+import Cardano.Ledger.Shelley.Genesis qualified as Ledger (mkShelleyGlobals)
 import Cardano.Ledger.State qualified as SL
 import Cardano.Protocol.Crypto qualified as Crypto
 import Cardano.Protocol.TPraos.API qualified as TPraos
@@ -199,7 +199,6 @@ import Ouroboros.Consensus.HardFork.Combinator.Ledger qualified as HFC
 import Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common qualified as HFC
 import Ouroboros.Consensus.HardFork.Combinator.State.Types
 import Ouroboros.Consensus.Ledger.Abstract qualified as Ledger
-import Ouroboros.Consensus.Ledger.Basics qualified as Consensus
 import Ouroboros.Consensus.Ledger.Extended qualified as Ledger
 import Ouroboros.Consensus.Ledger.Tables.Utils qualified as Ledger
 import Ouroboros.Consensus.Node.ProtocolInfo qualified as Consensus
@@ -275,6 +274,8 @@ import Lens.Micro
 import Network.Mux qualified as Mux
 import Network.TypedProtocol.Core (Nat (..))
 import System.FilePath
+
+import Ouroboros.Consensus.Ledger.Tables.Basics qualified as Consensus
 
 data InitialLedgerStateError
   = -- | Failed to read or parse the network config file.
@@ -1255,10 +1256,9 @@ data LedgerState = LedgerState
   { clsState :: Consensus.CardanoLedgerState Consensus.StandardCrypto Ledger.EmptyMK
   , clsTables
       :: Ledger.LedgerTables
-           (Ledger.LedgerState (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto)))
+           (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto))
            Ledger.ValuesMK
   }
-  deriving Show
 
 -- | Retrieve new epoch state from the ledger state, or an error on failure
 getAnyNewEpochState
@@ -1433,7 +1433,7 @@ type LedgerStateEvents = (LedgerState, [LedgerEvent])
 
 toLedgerStateEvents
   :: Ledger.LedgerResult
-       (Ledger.LedgerState (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto)))
+       (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto))
        LedgerState
   -> LedgerStateEvents
 toLedgerStateEvents lr = (ledgerState, ledgerEvents)
@@ -1864,7 +1864,7 @@ tickThenReapplyCheckHash cfg block (LedgerState st tbs) =
       let
         keys
           :: Consensus.LedgerTables
-               (Ledger.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+               (Consensus.CardanoBlock Consensus.StandardCrypto)
                Ledger.KeysMK
         keys = Ledger.getBlockKeySets block
 
@@ -1925,7 +1925,7 @@ tickThenApply cfg block (LedgerState st tbs) =
   let
     keys
       :: Consensus.LedgerTables
-           (Ledger.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+           (Consensus.CardanoBlock Consensus.StandardCrypto)
            Ledger.KeysMK
     keys = Ledger.getBlockKeySets block
 
@@ -2271,7 +2271,7 @@ data AnyNewEpochState where
     :: ShelleyBasedEra era
     -> ShelleyAPI.NewEpochState (ShelleyLedgerEra era)
     -> Ledger.LedgerTables
-         (Ledger.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+         (Consensus.CardanoBlock Consensus.StandardCrypto)
          Ledger.ValuesMK
     -> AnyNewEpochState
 
@@ -2283,7 +2283,7 @@ getLedgerTablesUTxOValues
   :: forall era
    . ShelleyBasedEra era
   -> Ledger.LedgerTables
-       (Ledger.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+       (Consensus.CardanoBlock Consensus.StandardCrypto)
        Ledger.ValuesMK
   -> Map TxIn (TxOut CtxUTxO era)
 getLedgerTablesUTxOValues sbe tbs =
