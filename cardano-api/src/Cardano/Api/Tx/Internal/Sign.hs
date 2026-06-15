@@ -117,6 +117,7 @@ import Data.Validation qualified as Valid
 import GHC.Exts (IsList (..))
 import GHC.Stack (HasCallStack)
 import Lens.Micro
+import Lens.Micro.Extras (view)
 
 -- ----------------------------------------------------------------------------
 -- Signed transactions
@@ -773,10 +774,10 @@ decodeShelleyBasedWitness
   -> Either CBOR.DecoderError (KeyWitness era)
 decodeShelleyBasedWitness sbe bs =
   let e =
-        Valid.toEither $
+        view Valid.either $
           mconcat $
             map
-              (Valid.liftError return)
+              (either (Valid.Failure . return) Valid.Success)
               [ bootstrapWitnessDecoder bs
               , shelleyKeyWitnessDecoder bs
               , legacyKeyWitnessDecoder bs
