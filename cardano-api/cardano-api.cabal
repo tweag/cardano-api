@@ -25,6 +25,7 @@ common project-config
   default-extensions:
     ImportQualifiedPost
     OverloadedStrings
+    UndecidableSuperClasses
 
   build-depends: base >=4.14 && <4.23
   ghc-options:
