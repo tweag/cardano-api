@@ -141,7 +141,13 @@ conwayEraOnwardsConstraints
   -> a
 conwayEraOnwardsConstraints = \case
   ConwayEraOnwardsConway -> id
-  ConwayEraOnwardsDijkstra -> id
+  -- Dijkstra cannot satisfy ShelleyEraTxCert (gated AtMostEra "Conway") or
+  -- TxCert ~ ConwayTxCert (Dijkstra has DijkstraTxCert). The Dijkstra
+  -- certificate path is a follow-up; for now any ConwayEraOnwards-bound
+  -- code on Dijkstra fails at runtime here.
+  ConwayEraOnwardsDijkstra ->
+    const $ error "TODO Dijkstra: conwayEraOnwardsConstraints: Dijkstra cert path not yet implemented"
+
 
 class IsBabbageBasedEra era => IsConwayBasedEra era where
   conwayBasedEra :: ConwayEraOnwards era
