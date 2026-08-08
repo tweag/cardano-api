@@ -853,12 +853,12 @@ toShelleyTxOutAny sbe = shelleyBasedEraConstraints sbe $ \case
                 .~ toBabbageTxOutDatum txoutdata
               & L.referenceScriptTxOutL
                 .~ refScriptToShelleyScript sbe refScript
-         AlonzoEraOnwardsDijkstra ->
-            L.mkBasicTxOut (toShelleyAddr addr) value
-              & L.datumTxOutL
-                .~ toBabbageTxOutDatum txoutdata
-              & L.referenceScriptTxOutL
-                .~ refScriptToShelleyScript sbe refScript
+          AlonzoEraOnwardsDijkstra ->
+             L.mkBasicTxOut (toShelleyAddr addr) value
+               & L.datumTxOutL
+                 .~ toBabbageTxOutDatum txoutdata
+               & L.referenceScriptTxOutL
+                 .~ refScriptToShelleyScript sbe refScript
       )
 
 fromShelleyTxOut
