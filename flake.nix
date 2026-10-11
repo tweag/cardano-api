@@ -42,48 +42,43 @@
     ghc-wasm-meta.url = "gitlab:haskell-wasm/ghc-wasm-meta?host=gitlab.haskell.org";
   };
 
-  outputs =
-    inputs:
-    let
-      supportedSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "aarch64-darwin"
-      ];
+  outputs = inputs: let
+    supportedSystems = [
+      "x86_64-linux"
+      "aarch64-linux"
+      "aarch64-darwin"
+    ];
 
-      # see flake `variants` below for alternative compilers
-      # this is used to build cardano-node on linux, so we test against it
-      stableCompiler = "ghc967";
-      # this is our main compiler for development
-      defaultCompiler = "ghc9124";
-      # Used for cross compilation for windows.
-      crossCompilerVersion = defaultCompiler;
-      # Used for haddock generation (avoids GHC 9.12 tyConStupidTheta panic)
-      haddockCompiler = "ghc914";
-    in
+    # see flake `variants` below for alternative compilers
+    # this is used to build cardano-node on linux, so we test against it
+    stableCompiler = "ghc967";
+    # this is our main compiler for development
+    defaultCompiler = "ghc9124";
+    # Used for cross compilation for windows.
+    crossCompilerVersion = defaultCompiler;
+    # Used for haddock generation (avoids GHC 9.12 tyConStupidTheta panic)
+    haddockCompiler = "ghc914";
+  in
     inputs.flake-utils.lib.eachSystem supportedSystems (
-      system:
-      let
+      system: let
         # setup our nixpkgs with the haskell.nix overlays, and the iohk-nix
         # overlays...
-        nixpkgs =
-          let
-            abseilOverlay =
-              final: prev:
-              prev.lib.optionalAttrs prev.stdenv.hostPlatform.isWindows {
-                abseil-cpp = prev.abseil-cpp.overrideAttrs (
-                  finalAttrs: previousAttrs: {
-                    buildInputs = previousAttrs.buildInputs ++ [ prev.pkgs.windows.mingw_w64_pthreads ];
-                  }
-                );
-              };
-            unstableOverlay = final: prev: {
-              unstable = import inputs.unstable {
-                inherit system;
-                inherit (inputs.haskellNix) config;
-              };
+        nixpkgs = let
+          abseilOverlay = final: prev:
+            prev.lib.optionalAttrs prev.stdenv.hostPlatform.isWindows {
+              abseil-cpp = prev.abseil-cpp.overrideAttrs (
+                finalAttrs: previousAttrs: {
+                  buildInputs = previousAttrs.buildInputs ++ [prev.pkgs.windows.mingw_w64_pthreads];
+                }
+              );
             };
-          in
+          unstableOverlay = final: prev: {
+            unstable = import inputs.unstable {
+              inherit system;
+              inherit (inputs.haskellNix) config;
+            };
+          };
+        in
           import inputs.nixpkgs {
             overlays = [
               unstableOverlay
@@ -100,8 +95,8 @@
           };
         inherit (nixpkgs) lib;
 
-        proto-js-bundle-drv = import ./nix/proto-to-js.nix { pkgs = nixpkgs; };
-        wasm-typedoc-drv = import ./nix/typedoc.nix { pkgs = nixpkgs; };
+        proto-js-bundle-drv = import ./nix/proto-to-js.nix {pkgs = nixpkgs;};
+        wasm-typedoc-drv = import ./nix/typedoc.nix {pkgs = nixpkgs;};
 
         pre-commit-check = inputs.pre-commit-hooks.lib.${nixpkgs.system}.run {
           src = ./.;
@@ -109,21 +104,20 @@
             alejandra.enable = true;
             cabal-gild = {
               enable = true;
-              entry =
-                let
-                  script = nixpkgs.writeShellScript "precommit-cabal-gild" ''
-                    for file in "$@"; do
-                        cabal-gild --io="$file"
-                    done
-                  '';
-                in
+              entry = let
+                script = nixpkgs.writeShellScript "precommit-cabal-gild" ''
+                  for file in "$@"; do
+                      cabal-gild --io="$file"
+                  done
+                '';
+              in
                 builtins.toString script;
               files = "\\.cabal$";
             };
             prettify = {
               enable = true;
               entry = "scripts/githooks/haskell-style-lint";
-              types = [ "haskell" ];
+              types = ["haskell"];
             };
           };
         };
@@ -131,17 +125,17 @@
         # We use cabalProject' to ensure we don't build the plan for
         # all systems.
         cabalProject = nixpkgs.haskell-nix.cabalProject' (
-          { config, ... }: {
+          {config, ...}: {
             src = ./.;
             name = "cardano-api";
             compiler-nix-name = lib.mkDefault defaultCompiler;
 
             # we also want cross compilation to windows on linux (and only with default compiler).
-            crossPlatforms =
-              p:
+            crossPlatforms = p:
               lib.optional (
                 system == "x86_64-linux" && config.compiler-nix-name == crossCompilerVersion
-              ) p.mingwW64;
+              )
+              p.mingwW64;
 
             # CHaP input map, so we can find CHaP packages (needs to be more
             # recent than the index-state we set!). Can be updated with
@@ -163,6 +157,8 @@
               # Packages in this repo
               p.cardano-api
               p.cardano-api-gen
+              p.cardano-rpc
+              p.cardano-wasm
               # Work around for issue created by our inability to register sublibs.
               # This package may need to be built and we need to make sure its dependencies
               # are included in `ghc-pkg list` (in particular `compact`)
@@ -172,21 +168,22 @@
               p.cardano-binary
             ];
             # tools we want in our shell, from hackage
-            shell.tools = {
-              cabal = "3.16.1.0";
-            }
-            // lib.optionalAttrs (config.compiler-nix-name == defaultCompiler) {
-              # tools that work only with default compiler
-              ghcid = "0.8.9";
-              cabal-gild = "1.7.0.1";
-              fourmolu = "0.18.0.0";
-              proto-lens-protoc = "latest";
-              haskell-language-server = {
-                src = inputs.hls;
-                configureArgs = "--disable-benchmarks --disable-tests";
+            shell.tools =
+              {
+                cabal = "3.16.1.0";
+              }
+              // lib.optionalAttrs (config.compiler-nix-name == defaultCompiler) {
+                # tools that work only with default compiler
+                ghcid = "0.8.9";
+                cabal-gild = "1.7.0.1";
+                fourmolu = "0.18.0.0";
+                proto-lens-protoc = "latest";
+                haskell-language-server = {
+                  src = inputs.hls;
+                  configureArgs = "--disable-benchmarks --disable-tests";
+                };
+                hlint = "3.10";
               };
-              hlint = "3.10";
-            };
             # and from nixpkgs or other inputs
             shell.nativeBuildInputs = with nixpkgs; [
               gh
@@ -208,7 +205,7 @@
             # disable Hoogle until someone request it
             shell.withHoogle = false;
             # Skip cross compilers for the shell
-            shell.crossPlatforms = _: [ ];
+            shell.crossPlatforms = _: [];
             shell.shellHook = ''
               export PATH="${nixpkgs.nix}/bin:$PATH"
               ${pre-commit-check.shellHook}
@@ -219,9 +216,9 @@
             # package customizations as needed. Where cabal.project is not
             # specific enough, or doesn't allow setting these.
             modules = [
-              ({ ... }: {
+              ({...}: {
                 packages.cardano-api = {
-                  configureFlags = [ "--ghc-option=-Werror" ];
+                  configureFlags = ["--ghc-option=-Werror"];
                   components = {
                     tests.cardano-api-golden = {
                       preCheck = ''
@@ -231,34 +228,44 @@
                   };
                 };
               })
-              (
-                {
-                  pkgs,
-                  config,
-                  ...
-                }:
-                let
-                  generatedExampleFiles = map (f: "cardano-wasm/lib-wrapper/${f}") (
-                    builtins.filter (f: lib.strings.hasSuffix ".d.ts" f) (
-                      builtins.attrNames (builtins.readDir ./cardano-wasm/lib-wrapper)
-                    )
-                  );
-                  exportWasmPath = "export CARDANO_WASM=${config.hsPkgs.cardano-wasm.components.exes.cardano-wasm}/bin/cardano-wasm${pkgs.stdenv.hostPlatform.extensions.executable}";
-                in
-                {
-                  packages.cardano-wasm.components.tests.cardano-wasm-golden.preCheck =
-                    let
-                      filteredProjectBase = inputs.incl ./. generatedExampleFiles;
-                    in
-                    ''
-                      ${exportWasmPath}
-                      cp -r ${filteredProjectBase}/* ..
-                    '';
-                }
-              )
+              ({
+                pkgs,
+                config,
+                ...
+              }: let
+                generatedExampleFiles = map (f: "cardano-wasm/lib-wrapper/${f}") (builtins.filter (f: lib.strings.hasSuffix ".d.ts" f) (builtins.attrNames (builtins.readDir ./cardano-wasm/lib-wrapper)));
+                exportWasmPath = "export CARDANO_WASM=${config.hsPkgs.cardano-wasm.components.exes.cardano-wasm}/bin/cardano-wasm${pkgs.stdenv.hostPlatform.extensions.executable}";
+              in {
+                packages.cardano-wasm.components.tests.cardano-wasm-golden.preCheck = let
+                  filteredProjectBase = inputs.incl ./. generatedExampleFiles;
+                in ''
+                  ${exportWasmPath}
+                  cp -r ${filteredProjectBase}/* ..
+                '';
+              })
               {
+                # haskell.nix's windows.nix points crypton-x509-system >=1.7 at a
+                # patch path that does not exist (missing ".patch" suffix); the
+                # postPatch below already applies the same Crypt32 -> crypt32
+                # rename, so drop the broken patch list.
+                packages.crypton-x509-system.patches = lib.mkForce [];
                 packages.crypton-x509-system.postPatch = ''
                   substituteInPlace crypton-x509-system.cabal --replace 'Crypt32' 'crypt32'
+                '';
+                # cardano-addresses vendors cardano-crypto's C bits, so the two
+                # packages define 15 identical symbols (the ed25519 set, the
+                # wallet_encrypted_* wrappers, and two unprefixed helpers). The
+                # GHC RTS linker refuses the duplicates when it loads both to run
+                # Template Haskell in cross-compiled builds. Namespace the
+                # vendored copy and make the file-local helpers static.
+                packages.cardano-addresses.postPatch = ''
+                  substituteInPlace cbits/ed25519/ed25519.c cbits/ed25519/ed25519.h cbits/encrypted_sign.c \
+                    --replace-fail cardano_crypto_ cardano_addresses_
+                  substituteInPlace cbits/encrypted_sign.c lib/Cardano/Address/Crypto/Wallet/Encrypted.hs \
+                    --replace-fail wallet_encrypted_ addresses_wallet_encrypted_
+                  substituteInPlace cbits/encrypted_sign.c \
+                    --replace-fail 'void clear(void *buf' 'static void clear(void *buf' \
+                    --replace-fail 'void scalar_add_no_overflow(' 'static void scalar_add_no_overflow('
                 '';
               }
               (
@@ -266,16 +273,16 @@
                   pkgs,
                   config,
                   ...
-                }:
-                {
-                  packages = {
-                    basement.components.library.configureFlags = [
-                      "--hsc2hs-option=--cflag=-Wno-int-conversion"
-                    ];
-                  }
-                  // lib.optionalAttrs (config.packages ? proto-lens-protobuf-types) {
-                    proto-lens-protobuf-types.components.library.build-tools = [ pkgs.buildPackages.protobuf ];
-                  };
+                }: {
+                  packages =
+                    {
+                      basement.components.library.configureFlags = [
+                        "--hsc2hs-option=--cflag=-Wno-int-conversion"
+                      ];
+                    }
+                    // lib.optionalAttrs (config.packages ? proto-lens-protobuf-types) {
+                      proto-lens-protobuf-types.components.library.build-tools = [pkgs.buildPackages.protobuf];
+                    };
                 }
               )
             ];
@@ -285,81 +292,80 @@
         flake = cabalProject.flake (
           lib.optionalAttrs (system == "x86_64-linux") {
             # on linux, build/test other supported compilers
-            variants =
-              let
-                # on windows we're using defaultCompiler only - stableCompiler makes ghc-iserv flaky
-                osDependentStableCompiler =
-                  if nixpkgs.stdenv.hostPlatform.isWindows then defaultCompiler else stableCompiler;
-              in
-              lib.genAttrs [ osDependentStableCompiler crossCompilerVersion haddockCompiler ]
-                (compiler-nix-name: {
-                  inherit compiler-nix-name;
-                });
+            variants = let
+              # on windows we're using defaultCompiler only - stableCompiler makes ghc-iserv flaky
+              osDependentStableCompiler =
+                if nixpkgs.stdenv.hostPlatform.isWindows
+                then defaultCompiler
+                else stableCompiler;
+            in
+              lib.genAttrs [osDependentStableCompiler crossCompilerVersion haddockCompiler]
+              (compiler-nix-name: {
+                inherit compiler-nix-name;
+              });
           }
         );
         # wasm shell
-        wasmShell =
-          let
-            wasm-pkgs = inputs.wasm-nixpkgs.legacyPackages.${system};
-            wasi-sdk = inputs.ghc-wasm-meta.packages.${system}.wasi-sdk;
-            wasm = {
-              libsodium = wasm-pkgs.callPackage ./nix/libsodium.nix { inherit wasi-sdk; };
-              secp256k1 = (wasm-pkgs.callPackage ./nix/secp256k1.nix { inherit wasi-sdk; }).overrideAttrs (_: {
-                src = nixpkgs.secp256k1.src;
+        wasmShell = let
+          wasm-pkgs = inputs.wasm-nixpkgs.legacyPackages.${system};
+          wasi-sdk = inputs.ghc-wasm-meta.packages.${system}.wasi-sdk;
+          wasm = {
+            libsodium = wasm-pkgs.callPackage ./nix/libsodium.nix {inherit wasi-sdk;};
+            secp256k1 = (wasm-pkgs.callPackage ./nix/secp256k1.nix {inherit wasi-sdk;}).overrideAttrs (_: {
+              src = nixpkgs.secp256k1.src;
+            });
+            blst =
+              (wasm-pkgs.callPackage ./nix/blst.nix {
+                inherit wasi-sdk;
+                version = nixpkgs.blst.version;
+              }).overrideAttrs
+              (_: {
+                src = nixpkgs.blst.src;
               });
-              blst =
-                (wasm-pkgs.callPackage ./nix/blst.nix {
-                  inherit wasi-sdk;
-                  version = nixpkgs.blst.version;
-                }).overrideAttrs
-                  (_: {
-                    src = nixpkgs.blst.src;
-                  });
-            };
-            # Stub pkg-config file so the cabal solver can resolve
-            # cardano-lmdb (a transitive dependency of ouroboros-consensus
-            # that nothing in this project actually needs). Without this,
-            # the solver rejects cardano-lmdb because lmdb is not
-            # available for wasm. Per-component builds ensure it is never
-            # actually compiled.
-            lmdb-pkg-config-stub = wasm-pkgs.writeTextDir "lib/pkgconfig/lmdb.pc" ''
-              Name: lmdb
-              Description: Stub for cabal solver — not actually built
-              Version: 0.9.33
-              Libs: -llmdb
-              Cflags:
-            '';
-          in
+          };
+          # Stub pkg-config file so the cabal solver can resolve
+          # cardano-lmdb (a transitive dependency of ouroboros-consensus
+          # that nothing in this project actually needs). Without this,
+          # the solver rejects cardano-lmdb because lmdb is not
+          # available for wasm. Per-component builds ensure it is never
+          # actually compiled.
+          lmdb-pkg-config-stub = wasm-pkgs.writeTextDir "lib/pkgconfig/lmdb.pc" ''
+            Name: lmdb
+            Description: Stub for cabal solver — not actually built
+            Version: 0.9.33
+            Libs: -llmdb
+            Cflags:
+          '';
+        in
           lib.optionalAttrs (system != "x86_64-darwin") {
             wasm = wasm-pkgs.mkShell {
-              packages = [
-                wasm-pkgs.pkg-config
-                wasm-pkgs.curl
-                wasm-pkgs.git
-                wasm-pkgs.patch-package
-                wasm-pkgs.binaryen
-                inputs.ghc-wasm-meta.packages.${system}.all_9_10
-                wasm.libsodium
-                wasm.secp256k1
-                wasm.blst
-                lmdb-pkg-config-stub
-              ]
-              ++ lib.optional (system == "x86_64-linux" || system == "aarch64-linux") wasm-pkgs.envoy-bin;
+              packages =
+                [
+                  wasm-pkgs.pkg-config
+                  wasm-pkgs.curl
+                  wasm-pkgs.git
+                  wasm-pkgs.patch-package
+                  wasm-pkgs.binaryen
+                  inputs.ghc-wasm-meta.packages.${system}.all_9_10
+                  wasm.libsodium
+                  wasm.secp256k1
+                  wasm.blst
+                  lmdb-pkg-config-stub
+                ]
+                ++ lib.optional (system == "x86_64-linux" || system == "aarch64-linux") wasm-pkgs.envoy-bin;
             };
           };
-        playwrightShell =
-          let
-            playwright-pkgs = inputs.nixpkgs.legacyPackages.${system};
-          in
-          {
-            playwright = playwright-pkgs.mkShell {
-              packages = [
-                playwright-pkgs.playwright-test
-                playwright-pkgs.python313Packages.docopt
-                playwright-pkgs.python313Packages.httpserver
-              ];
-            };
+        playwrightShell = let
+          playwright-pkgs = inputs.nixpkgs.legacyPackages.${system};
+        in {
+          playwright = playwright-pkgs.mkShell {
+            packages = [
+              playwright-pkgs.playwright-test
+              playwright-pkgs.python313Packages.docopt
+              playwright-pkgs.python313Packages.httpserver
+            ];
           };
+        };
         demoShell = let
           # The Elm toolchain comes from the `unstable` input: on this
           # flake's pinned nixpkgs, elm-format is bootstrapped through a
@@ -377,65 +383,106 @@
             ];
           };
         };
-        flakeWithWasmShell = nixpkgs.lib.recursiveUpdate flake {
-          devShells = wasmShell;
-          hydraJobs = {
-            devShells = wasmShell;
+        # cardano-rpc quickstart shells: each shell.nix already stands on its
+        # own for plain `nix-shell` users, so just import them here rather
+        # than duplicating their package lists.
+        rpcQuickstartShells = {
+          rpc-quickstart = import ./cardano-rpc/quickstart/shell.nix {pkgs = nixpkgs.unstable;};
+          rpc-quickstart-rust = import ./cardano-rpc/quickstart/rust/shell.nix {pkgs = nixpkgs.unstable;};
+          rpc-quickstart-typescript = import ./cardano-rpc/quickstart/typescript/shell.nix {pkgs = nixpkgs.unstable;};
+          rpc-quickstart-go = import ./cardano-rpc/quickstart/go/shell.nix {pkgs = nixpkgs.unstable;};
+          rpc-quickstart-python = import ./cardano-rpc/quickstart/python/shell.nix {pkgs = nixpkgs.unstable;};
+          # Haskell needs the project's own haskell.nix toolchain (GHC, cabal
+          # and the Cardano C libraries), which a plain nixpkgs mkShell can't
+          # provide, so alias the repository's own dev shell instead of a
+          # per-language shell.nix.
+          rpc-quickstart-haskell = flake.devShells.default;
+        };
+        # The Haskell quickstart is a standalone cabal project (readers copy it
+        # out of the repo), so fold it in through a derived project instead of
+        # the repository's own cabal.project.
+        quickstartProject = cabalProject.appendModule {
+          # Concatenated with the base project's cabalProjectLocal, so the CHaP
+          # repository stanza already applies here. `allow-newer` keeps the
+          # example's doc-facing `^>=` bounds from breaking the flake's solve
+          # on cardano-api/cardano-rpc version bumps.
+          cabalProjectLocal = ''
+            packages: cardano-rpc/quickstart/haskell
+            allow-newer: cardano-rpc-quickstart:cardano-rpc, cardano-rpc-quickstart:cardano-api
+          '';
+        };
+        rpc-quickstart-haskell-drv = let
+          exes = quickstartProject.hsPkgs.cardano-rpc-quickstart.components.exes;
+        in
+          nixpkgs.symlinkJoin {
+            name = "rpc-quickstart-haskell";
+            paths = [
+              exes.cardano-rpc-quickstart
+              exes.send-lovelace
+            ];
           };
-        };
-        flakeWithPlaywrightShell = nixpkgs.lib.recursiveUpdate flakeWithWasmShell {
-          devShells = playwrightShell;
-          hydraJobs = {
-            devShells = playwrightShell;
-          };
-        };
-        flakeWithDemoShell = nixpkgs.lib.recursiveUpdate flakeWithPlaywrightShell {
-          devShells = demoShell;
-          hydraJobs = {devShells = demoShell;};
-        };
+        # wasm/playwright/demo are built by Hydra too (hydraJobs.devShells);
+        # rpcQuickstartShells is interactive-only, see hydraJobs below.
+        extraDevShells = wasmShell // playwrightShell // demoShell;
+        # ciJobsAggregates doesn't forward a devShells key, and flake.hydraJobs
+        # already has its own devShells.default, so merge both explicitly.
+        hydraDevShells = (flake.hydraJobs.devShells or {}) // extraDevShells;
       in
-        nixpkgs.lib.recursiveUpdate flakeWithDemoShell rec {
+        nixpkgs.lib.recursiveUpdate flake rec {
           project = cabalProject;
           # add a required job, that's basically all hydraJobs.
           hydraJobs =
             nixpkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates
             {
               ciJobs =
-                flakeWithDemoShell.hydraJobs
+                flake.hydraJobs
                 // {
+                  devShells = hydraDevShells;
                   # This ensure hydra send a status for the required job (even if no change other than commit hash)
                   revision = nixpkgs.writeText "revision" (inputs.self.rev or "dirty");
                   proto-js-bundle = proto-js-bundle-drv;
                   wasm-typedoc = wasm-typedoc-drv;
+                }
+                // lib.optionalAttrs (system == "x86_64-linux") {
+                  # just x86_64-linux to save evaluation and building time
+                  rpc-quickstart-haskell = rpc-quickstart-haskell-drv;
                 };
+              # Don't block merges on RPC quickstart failures
+              nonRequiredPaths = [(lib.hasPrefix "rpc-quickstart-haskell")];
             }
             // {
-              packages = {
-                wasm-typedoc = wasm-typedoc-drv;
-                proto-js-bundle = proto-js-bundle-drv;
-              };
+              packages =
+                {
+                  wasm-typedoc = wasm-typedoc-drv;
+                  proto-js-bundle = proto-js-bundle-drv;
+                }
+                # x86_64-linux only; see comment on the ciJobs merge above.
+                // lib.optionalAttrs (system == "x86_64-linux") {
+                  rpc-quickstart-haskell = rpc-quickstart-haskell-drv;
+                };
+              devShells = hydraDevShells;
             };
-        legacyPackages = {
-          inherit cabalProject nixpkgs;
-          # also provide hydraJobs through legacyPackages to allow building without system prefix:
-          inherit hydraJobs;
-        };
-        packages = {
-          proto-js-bundle = proto-js-bundle-drv;
-          wasm-typedoc = wasm-typedoc-drv;
-        };
-        devShells =
-          let
+          legacyPackages = {
+            inherit cabalProject nixpkgs;
+            # also provide hydraJobs through legacyPackages to allow building without system prefix:
+            inherit hydraJobs;
+          };
+          packages = {
+            proto-js-bundle = proto-js-bundle-drv;
+            wasm-typedoc = wasm-typedoc-drv;
+            rpc-quickstart-haskell = rpc-quickstart-haskell-drv;
+          };
+          devShells = let
             # profiling shell
             profilingShell = p: {
               # `nix develop .#profiling` (or `.#ghc927.profiling): a shell with profiling enabled
-              profiling = (p.appendModule { modules = [ { enableLibraryProfiling = true; } ]; }).shell;
+              profiling = (p.appendModule {modules = [{enableLibraryProfiling = true;}];}).shell;
             };
           in
-          profilingShell cabalProject;
-        # formatter used by nix fmt
-        formatter = nixpkgs.alejandra;
-      }
+            profilingShell cabalProject // extraDevShells // rpcQuickstartShells;
+          # formatter used by nix fmt
+          formatter = nixpkgs.alejandra;
+        }
     );
 
   nixConfig = {

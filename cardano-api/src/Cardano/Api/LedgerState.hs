@@ -110,9 +110,9 @@ import Cardano.Api.Byron.Internal.Proposal as Byron
 import Cardano.Api.Certificate.Internal
 import Cardano.Api.Consensus.Internal.Mode
 import Cardano.Api.Consensus.Internal.Mode qualified as Api
-import Cardano.Api.Era.Internal.Case
 import Cardano.Api.Era.Internal.Core (forEraInEon, forEraMaybeEon, toCardanoEra)
 import Cardano.Api.Era.Internal.Eon.BabbageEraOnwards
+import Cardano.Api.Era.Internal.Eon.ConwayEraOnwards (ConwayEraOnwards)
 import Cardano.Api.Era.Internal.Eon.ShelleyBasedEra
 import Cardano.Api.Error as Api
 import Cardano.Api.Genesis.Internal
@@ -176,6 +176,7 @@ import Cardano.Ledger.Shelley.Transition qualified as Ledger
 import Cardano.Ledger.Slot qualified as Ledger
 import Cardano.Ledger.State qualified as SL
 import Cardano.Protocol.Crypto qualified as Crypto
+import Cardano.Protocol.Praos.VRF (mkInputVRF, vrfLeaderValue)
 import Cardano.Protocol.TPraos.API qualified as TPraos
 import Cardano.Protocol.TPraos.BlockHeader (checkLeaderNatValue)
 import Cardano.Protocol.TPraos.BlockHeader qualified as TPraos
@@ -205,7 +206,7 @@ import Ouroboros.Consensus.Protocol.Abstract (ChainDepState, ConsensusProtocol (
 import Ouroboros.Consensus.Protocol.Praos qualified as Praos
 import Ouroboros.Consensus.Protocol.Praos.AgentClient
 import Ouroboros.Consensus.Protocol.Praos.Common qualified as Consensus
-import Ouroboros.Consensus.Protocol.Praos.VRF (mkInputVRF, vrfLeaderValue)
+import Ouroboros.Consensus.Protocol.Praos2 qualified as Leios
 import Ouroboros.Consensus.Protocol.TPraos qualified as TPraos
 import Ouroboros.Consensus.Shelley.HFEras qualified as Shelley
 import Ouroboros.Consensus.Shelley.Ledger.Block qualified as Shelley
@@ -1265,7 +1266,7 @@ data LedgerState = LedgerState
   { clsState :: Consensus.CardanoLedgerState Consensus.StandardCrypto Ledger.EmptyMK
   , clsTables
       :: Ledger.LedgerTables
-           (Consensus.LedgerState (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto)))
+           (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto))
            Ledger.ValuesMK
   }
   deriving Show
@@ -1395,7 +1396,7 @@ pattern DijkstraLedgerState
   :: Current
        (Flip Consensus.LedgerState mk)
        ( Shelley.ShelleyBlock
-           (Praos.Praos Ledger.StandardCrypto)
+           (Leios.Praos2 Ledger.StandardCrypto)
            Consensus.DijkstraEra
        )
   -> NS (Current (Flip Consensus.LedgerState mk)) (Consensus.CardanoEras Consensus.StandardCrypto)
@@ -1443,7 +1444,7 @@ type LedgerStateEvents = (LedgerState, [LedgerEvent])
 
 toLedgerStateEvents
   :: Ledger.LedgerResult
-       (Consensus.LedgerState (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto)))
+       (Consensus.HardForkBlock (Consensus.CardanoEras Consensus.StandardCrypto))
        LedgerState
   -> LedgerStateEvents
 toLedgerStateEvents lr = (ledgerState, ledgerEvents)
@@ -1917,7 +1918,7 @@ tickThenReapplyCheckHash cfg block (LedgerState st tbs) =
       let
         keys
           :: Ledger.LedgerTables
-               (Consensus.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+               (Consensus.CardanoBlock Consensus.StandardCrypto)
                Ledger.KeysMK
         keys = Ledger.getBlockKeySets block
 
@@ -1978,7 +1979,7 @@ tickThenApply cfg block (LedgerState st tbs) =
   let
     keys
       :: Ledger.LedgerTables
-           (Consensus.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+           (Consensus.CardanoBlock Consensus.StandardCrypto)
            Ledger.KeysMK
     keys = Ledger.getBlockKeySets block
 
@@ -2109,7 +2110,7 @@ nextEpochEligibleLeadershipSlots sbe sGen serCurrEpochState ptclState poolid (Vr
         stabilityWindowSlots :: SlotNo
         stabilityWindowSlots = fromIntegral @Word64 $ floor $ fromRational @Double stabilityWindowR
         stableStakeDistribSlot = currentEpochLastSlot - stabilityWindowSlots
-        stabilityWindowConst = caseShelleyToBabbageOrConwayEraOnwards (const 3) (const 4) sbe
+        stabilityWindowConst = inEonForShelleyBasedEra @ConwayEraOnwards 3 (const 4) sbe
 
     case cTip of
       ChainTipAtGenesis -> Left LeaderErrGenesisSlot
@@ -2332,7 +2333,7 @@ data AnyNewEpochState where
     :: ShelleyBasedEra era
     -> ShelleyAPI.NewEpochState (ShelleyLedgerEra era)
     -> Ledger.LedgerTables
-         (Consensus.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+         (Consensus.CardanoBlock Consensus.StandardCrypto)
          Ledger.ValuesMK
     -> AnyNewEpochState
 
@@ -2344,7 +2345,7 @@ getLedgerTablesUTxOValues
   :: forall era
    . ShelleyBasedEra era
   -> Ledger.LedgerTables
-       (Consensus.LedgerState (Consensus.CardanoBlock Consensus.StandardCrypto))
+       (Consensus.CardanoBlock Consensus.StandardCrypto)
        Ledger.ValuesMK
   -> Map TxIn (TxOut CtxUTxO era)
 getLedgerTablesUTxOValues sbe tbs =

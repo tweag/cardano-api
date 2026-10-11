@@ -74,6 +74,7 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
 import Data.Foldable (Foldable (toList))
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Lens.Micro
 
@@ -311,12 +312,13 @@ fromConsensusPointHF (Consensus.BlockPoint slot (Consensus.OneEraHash h)) =
 -- | Convert a 'Consensus.Point' for single Shelley-era block type
 toConsensusPoint
   :: forall ledgerera protocol
-   . Consensus.ShelleyCompatible protocol ledgerera
-  => ChainPoint
+   . ChainPoint
   -> Consensus.Point (Consensus.ShelleyBlock protocol ledgerera)
 toConsensusPoint ChainPointAtGenesis = Consensus.GenesisPoint
 toConsensusPoint (ChainPoint slot (HeaderHash h)) =
-  Consensus.BlockPoint slot (Consensus.fromShortRawHash proxy h)
+  Consensus.BlockPoint
+    slot
+    (fromMaybe (error "toConsensusPoint: hash size mismatch") (Consensus.fromShortRawHash proxy h))
  where
   proxy :: Proxy (Consensus.ShelleyBlock protocol ledgerera)
   proxy = Proxy
@@ -324,8 +326,7 @@ toConsensusPoint (ChainPoint slot (HeaderHash h)) =
 -- | Convert a 'Consensus.Point' for single Shelley-era block type
 fromConsensusPoint
   :: forall protocol ledgerera
-   . Consensus.ShelleyCompatible protocol ledgerera
-  => Consensus.Point (Consensus.ShelleyBlock protocol ledgerera)
+   . Consensus.Point (Consensus.ShelleyBlock protocol ledgerera)
   -> ChainPoint
 fromConsensusPoint Consensus.GenesisPoint = ChainPointAtGenesis
 fromConsensusPoint (Consensus.BlockPoint slot h) =

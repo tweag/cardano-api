@@ -27,12 +27,14 @@ import Cardano.Ledger.Api.Era
   , AlonzoEra
   , BabbageEra
   , ConwayEra
+  , DijkstraEra
   , MaryEra
   , ShelleyEra
   )
 import Cardano.Ledger.Conway.Rules qualified as Conway
 import Cardano.Ledger.Core
 import Cardano.Ledger.Core qualified as Ledger.Core
+import Cardano.Ledger.Dijkstra.Rules qualified as Dijkstra
 import Cardano.Ledger.Shelley.Rules
   ( RupdEvent (..)
   , ShelleyBbodyEvent (LedgersEvent)
@@ -47,6 +49,7 @@ import Ouroboros.Consensus.Cardano.Block (HardForkBlock)
 import Ouroboros.Consensus.Cardano.Block qualified as Consensus
 import Ouroboros.Consensus.HardFork.Combinator.AcrossEras (getOneEraLedgerEvent)
 import Ouroboros.Consensus.Protocol.Praos qualified as Consensus
+import Ouroboros.Consensus.Protocol.Praos2 qualified as Consensus
 import Ouroboros.Consensus.Protocol.TPraos qualified as Consensus
 import Ouroboros.Consensus.Shelley.Ledger
   ( ShelleyBlock
@@ -180,6 +183,29 @@ toLedgerEventConway evt =
               Conway.GovRemovedVotes txid replacedVotes unregisteredDReps ->
                 Just $ RemovedGovernanceVotes txid replacedVotes unregisteredDReps
 
+instance ConvertLedgerEvent (ShelleyBlock protocol DijkstraEra) where
+  toLedgerEvent = toLedgerEventDijkstra
+
+toLedgerEventDijkstra
+  :: WrapLedgerEvent (ShelleyBlock protocol DijkstraEra)
+  -> Maybe LedgerEvent
+toLedgerEventDijkstra evt =
+  case unwrapLedgerEvent evt of
+    ShelleyLedgerEventTICK (TickNewEpochEvent newEpochEvent) -> handleConwayNEWEPOCHEvents newEpochEvent
+    ShelleyLedgerEventTICK (TickRupdEvent rewardUpdate) -> handleLedgerRUPDEvents rewardUpdate
+    ShelleyLedgerEventBBODY
+      (ShelleyInAlonzoEvent (LedgersEvent (Shelley.LedgerEvent dijkstraLedgerEvent))) ->
+        case dijkstraLedgerEvent of
+          Dijkstra.UtxowEvent utxowEvent -> handleDijkstraUTxOWEvent utxowEvent
+          Dijkstra.EntitiesEvent{} -> Nothing
+          Dijkstra.GovEvent govEvent ->
+            case govEvent of
+              Conway.GovNewProposals txid props ->
+                Just $ NewGovernanceProposals txid (AnyProposals props)
+              Conway.GovRemovedVotes txid replacedVotes unregisteredDReps ->
+                Just $ RemovedGovernanceVotes txid replacedVotes unregisteredDReps
+          Dijkstra.SubLedgersEvent{} -> Nothing
+
 instance ConvertLedgerEvent (HardForkBlock (Consensus.CardanoEras StandardCrypto)) where
   toLedgerEvent wrappedLedgerEvent =
     case getOneEraLedgerEvent $ unwrapLedgerEvent wrappedLedgerEvent of
@@ -189,6 +215,7 @@ instance ConvertLedgerEvent (HardForkBlock (Consensus.CardanoEras StandardCrypto
       AlonzoLedgerEvent ledgerEvent -> toLedgerEvent ledgerEvent
       BabbageLedgerEvent ledgerEvent -> toLedgerEvent ledgerEvent
       ConwayLedgerEvent ledgerEvent -> toLedgerEvent ledgerEvent
+      DijkstraLedgerEvent ledgerEvent -> toLedgerEvent ledgerEvent
 
 {-# COMPLETE
   ShelleyLedgerEvent
@@ -197,6 +224,7 @@ instance ConvertLedgerEvent (HardForkBlock (Consensus.CardanoEras StandardCrypto
   , AlonzoLedgerEvent
   , BabbageLedgerEvent
   , ConwayLedgerEvent
+  , DijkstraLedgerEvent
   #-}
 
 pattern ShelleyLedgerEvent
@@ -228,3 +256,8 @@ pattern ConwayLedgerEvent
   :: WrapLedgerEvent (ShelleyBlock (Consensus.Praos StandardCrypto) ConwayEra)
   -> NS WrapLedgerEvent (Consensus.CardanoEras StandardCrypto)
 pattern ConwayLedgerEvent x = S (S (S (S (S (S (Z x))))))
+
+pattern DijkstraLedgerEvent
+  :: WrapLedgerEvent (ShelleyBlock (Consensus.Praos2 StandardCrypto) DijkstraEra)
+  -> NS WrapLedgerEvent (Consensus.CardanoEras StandardCrypto)
+pattern DijkstraLedgerEvent x = S (S (S (S (S (S (S (Z x)))))))
