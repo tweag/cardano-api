@@ -56,12 +56,13 @@ import Cardano.Ledger.Alonzo.Plutus.TxInfo qualified as L
 import Cardano.Ledger.Alonzo.UTxO qualified as L
 import Cardano.Ledger.Api qualified as L
 import Cardano.Ledger.BaseTypes (Inject (..))
+import Cardano.Ledger.Binary (Annotator, DecCBOR, EncCBOR)
 import Cardano.Ledger.Conway qualified as Ledger
-import Cardano.Ledger.Conway.Core qualified as L (ConwayEraPParams)
 import Cardano.Ledger.Conway.Governance qualified as L
 import Cardano.Ledger.Conway.State qualified as L
 import Cardano.Ledger.Core qualified as Ledger
 import Cardano.Ledger.Hashes qualified as L
+import Cardano.Ledger.MempoolTx (MempoolTx)
 
 import Control.Monad.Error.Class
 import Data.Aeson (FromJSON (..), ToJSON, withText)
@@ -317,6 +318,8 @@ type EraCommonConstraints era =
   , L.EraPlutusContext (LedgerEra era)
   , Inject (L.AlonzoContextError (LedgerEra era)) (L.ContextError (LedgerEra era))
   , L.EraTx (LedgerEra era)
+  , EncCBOR (MempoolTx (LedgerEra era))
+  , DecCBOR (Annotator (MempoolTx (LedgerEra era)))
   , L.EraTxCert (LedgerEra era)
   , L.EraTxOut (LedgerEra era)
   , L.EraUTxO (LedgerEra era)

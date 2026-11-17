@@ -223,8 +223,8 @@ data IntroducedInDijkstraPParams era
   -- ^ Peras bootstrap round.
   , idPerasQuorumThresholdSafetyMargin :: StrictMaybe Ledger.UnitInterval
   -- ^ Safety margin for the Peras quorum threshold.
-  , idRefInputsCostPerMultiAssetPolicy :: StrictMaybe Ledger.Coin
-  -- ^ Reference-input cost per multi-asset policy.
+  , idRefInputsCostPerMultiAssetByte :: StrictMaybe Ledger.CoinPerByte
+  -- ^ Reference-input cost per multi-asset byte.
   , idRefInputsCostPerDatumByte :: StrictMaybe Ledger.CoinPerByte
   -- ^ Reference-input cost per datum byte.
   }
@@ -257,7 +257,7 @@ createIntroducedInDijkstraPParams IntroducedInDijkstraPParams{..} =
     & Ledger.ppuPerasTargetCommitteeSizeL .~ idPerasTargetCommitteeSize
     & Ledger.ppuPerasBootstrapRoundL .~ idPerasBootstrapRound
     & Ledger.ppuPerasQuorumThresholdSafetyMarginL .~ idPerasQuorumThresholdSafetyMargin
-    & Ledger.ppuRefInputsCostPerMultiAssetPolicyL .~ idRefInputsCostPerMultiAssetPolicy
+    & Ledger.ppuRefInputsCostPerMultiAssetByteL .~ idRefInputsCostPerMultiAssetByte
     & Ledger.ppuRefInputsCostPerDatumByteL .~ idRefInputsCostPerDatumByte
 
 pparamsUpdateToIntroducedInDijkstraPParams
@@ -287,7 +287,7 @@ pparamsUpdateToIntroducedInDijkstraPParams ppupdate =
     , idPerasTargetCommitteeSize = ppupdate ^. Ledger.ppuPerasTargetCommitteeSizeL
     , idPerasBootstrapRound = ppupdate ^. Ledger.ppuPerasBootstrapRoundL
     , idPerasQuorumThresholdSafetyMargin = ppupdate ^. Ledger.ppuPerasQuorumThresholdSafetyMarginL
-    , idRefInputsCostPerMultiAssetPolicy = ppupdate ^. Ledger.ppuRefInputsCostPerMultiAssetPolicyL
+    , idRefInputsCostPerMultiAssetByte = ppupdate ^. Ledger.ppuRefInputsCostPerMultiAssetByteL
     , idRefInputsCostPerDatumByte = ppupdate ^. Ledger.ppuRefInputsCostPerDatumByteL
     }
 
